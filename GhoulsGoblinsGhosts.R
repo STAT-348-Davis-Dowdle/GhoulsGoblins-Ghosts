@@ -6,6 +6,8 @@ library(keras)
 library(bonsai)
 library(lightgbm)
 library(dbarts)
+library(discrim)
+library(naivebayes)
 
 # set working directory
 setwd("C:/Users/davis/OneDrive - Brigham Young University/Documents/skool/new/stat 348/GhoulsGoblins&Ghosts/GhoulsGoblinsGhosts")
@@ -150,3 +152,41 @@ boost_predictions <- boost_wf %>%
 boost_submission <- data.frame(id = test$id, type = boost_predictions$.pred_class)
 
 write.csv(boost_submission, "boost_submission.csv", row.names = F)
+
+
+# Final Submission
+final_recipe <- recipe(type ~ ., data = train) %>%
+  update_role(id, new_role = "sample ID") %>%
+  step_mutate_at(color, fn = factor) %>%
+  step_lencode_glm(all_nominal_predictors(), outcome = vars(type))
+
+final_model <- naive_Bayes(Laplace = tune(),
+                           smoothness = tune()) %>%
+  set_engine("naivebayes") %>%
+  set_mode("classification")
+
+wf <- workflow() %>%
+  add_recipe(final_recipe) %>%
+  add_model(final_model)
+
+grid <- grid_regular(Laplace(), smoothness(), levels = 5)
+
+folds <- vfold_cv(train, v = 5, repeats = 1)
+
+results <- wf %>%
+  tune_grid(resamples = folds,
+            grid = grid)
+
+best <- results %>%
+  select_best("accuracy")
+
+final_wf <- wf %>%
+  finalize_workflow(best) %>%
+  fit(train)
+
+predictions <- final_wf %>%
+  predict(new_data = test, type = "class")
+
+submission <- data.frame(id = test$id, type = predictions$.pred_class)
+
+write.csv(submission, "submission.csv", row.names = F)
